@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graded Mail Filtering Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --ink:#1a222d; --muted:#5d6978; --line:#e2e6ec;
+  --accent:#2c4bb0; --accent-ink:#ffffff; --accent-soft:#eef1fb;
+  --held:#8a5200; --held-soft:#fdf3d9; --spam:#9c3434; --ok:#17614f; --note:#6b3fb3;
+  --font-body:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#12161c; --surface:#181d25; --ink:#e6eaf0; --muted:#98a4b3; --line:#28303b;
+    --accent:#93a9ff; --accent-ink:#0c1326; --accent-soft:#1c2540;
+    --held:#f1c56c; --held-soft:#2f260f; --spam:#f1a7a3; --ok:#84d4c0; --note:#c7abff;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12161c; --surface:#181d25; --ink:#e6eaf0; --muted:#98a4b3; --line:#28303b;
+  --accent:#93a9ff; --accent-ink:#0c1326; --accent-soft:#1c2540;
+  --held:#f1c56c; --held-soft:#2f260f; --spam:#f1a7a3; --ok:#84d4c0; --note:#c7abff;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.45;display:flex;flex-direction:column}
+button,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3,p,dl,dd,ul{margin:0}
+ul{padding:0;list-style:none}
+
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{font-size:16px;font-weight:600}
+.brand span{font-size:12.5px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;padding:2px;background:var(--bg)}
+.seg button{border:0;background:transparent;border-radius:6px;padding:5px 12px;color:var(--muted);font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.ghost{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 12px;font-weight:500}
+.ghost[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.mode{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--ok);font-weight:500;font-size:13px}
+.link{border:0;background:none;padding:0;color:var(--accent);font-weight:500;white-space:nowrap}
+.link:hover{text-decoration:underline}
+.link.quiet{color:var(--muted)}
+
+.app{position:relative;flex:1;min-height:0;display:grid;grid-template-columns:228px minmax(300px,400px) minmax(0,1fr)}
+.app.g{grid-template-columns:228px minmax(280px,380px) minmax(0,1fr) 340px}
+.side,.list,.read,.guide{min-height:0;overflow:auto}
+.side{padding:12px 10px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--line)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{display:flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:6px;padding:7px 10px;text-align:left;width:100%}
+.nav button:hover{background:var(--accent-soft)}
+.nav button[aria-current="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav .n{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.nav .sub{padding-left:24px}
+.sect{border-top:1px solid var(--line);padding:12px 10px 0;display:flex;flex-direction:column;gap:10px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:0;background:transparent;padding:0;font-weight:500;text-align:left;white-space:nowrap}
+.switch i{width:34px;height:20px;border-radius:999px;background:var(--line);position:relative;flex:none;transition:background .15s}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 1px var(--line);transition:transform .15s}
+.switch[aria-pressed="true"] i{background:var(--accent)}
+.switch[aria-pressed="true"] i::after{transform:translateX(14px);box-shadow:none}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fields label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+select{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 6px}
+.small{font-size:12.5px;color:var(--muted)}
+
+.list{background:var(--surface);border-right:1px solid var(--line)}
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.status b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.status .s+.s::before{content:"\00b7";margin-right:8px}
+.notice{display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13.5px}
+.notice .grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.notice .acts{display:flex;flex-wrap:wrap;gap:4px 14px;flex:none}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:6px;background:var(--muted)}
+.dot.held{background:var(--held)}
+.dot.tip{background:var(--accent)}
+.msg{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:transparent;padding:10px 16px}
+.msg:hover{background:var(--bg)}
+.msg[aria-current="true"]{background:var(--accent-soft)}
+.msg .top{display:flex;gap:8px;align-items:center}
+.msg .from{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg.unread .from{font-weight:600}
+.msg .time{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+.msg .sub{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.msg .sub b{font-weight:400;color:var(--ink)}
+.tag{font-size:11.5px;font-weight:500;border-radius:4px;padding:1px 6px;flex:none;white-space:nowrap}
+.tag.new{color:var(--accent);background:var(--accent-soft)}
+.tag.held{color:var(--held);background:var(--held-soft)}
+.empty{padding:20px 16px;color:var(--muted)}
+.report{padding:18px 16px;display:flex;flex-direction:column;gap:10px}
+.report h2{font-size:15px;font-weight:600}
+.stats{display:grid;grid-template-columns:1fr auto;gap:0 16px}
+.stats dt,.stats dd{padding:9px 0;border-bottom:1px solid var(--line)}
+.stats dd{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+
+.read{background:var(--surface);padding:22px 26px;display:flex;flex-direction:column;gap:14px}
+.read h2{font-size:20px;line-height:1.25;font-weight:600;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:2px 10px;color:var(--muted);font-size:13px}
+.meta b{color:var(--ink);font-weight:500}
+.strip{border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:12px;max-width:640px}
+.strip.held{background:var(--held-soft);border-color:transparent}
+.strip h3{font-size:14px;font-weight:600}
+.strip.held h3{color:var(--held)}
+.strip.spam h3{color:var(--spam)}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px}
+.facts dt{color:var(--muted)}
+.steps{display:inline-flex;gap:3px;vertical-align:middle;margin-right:8px}
+.steps i{width:20px;height:6px;border-radius:3px;background:var(--muted);opacity:.3}
+.steps i.on{background:var(--ink);opacity:1}
+.row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 14px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.inline{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;font-size:13px;color:var(--muted)}
+.inline .dot{margin-top:0}
+.inline>span{flex:1 1 240px;min-width:0}
+.body{display:flex;flex-direction:column;gap:10px;max-width:65ch;font-size:15px;line-height:1.55}
+.deadlink{text-decoration:underline dotted;color:var(--muted)}
+
+.guide{border-left:1px solid var(--line);background:var(--bg);padding:16px;display:flex;flex-direction:column;gap:14px}
+.guide[hidden]{display:none}
+.guide h2{display:flex;justify-content:space-between;align-items:baseline;font-size:15px;font-weight:600}
+.guide h3{font-size:12.5px;font-weight:600;color:var(--muted)}
+.notes{display:flex;flex-direction:column;gap:10px}
+.notes li{display:grid;grid-template-columns:18px 1fr;gap:8px;font-size:13.5px}
+.notes b{font-weight:600}
+.notes em{font-style:normal;color:var(--muted);font-size:12.5px;white-space:nowrap}
+.nb{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--note);color:var(--surface);font-family:var(--font-mono);font-size:11px;font-weight:500;flex:none;margin-right:6px;vertical-align:middle}
+.notes .nb{margin:1px 0 0}
+.log{display:flex;flex-direction:column;gap:8px}
+.log li{display:grid;grid-template-columns:60px 1fr;gap:8px;font-size:13px}
+.lvl{font-size:11.5px;font-weight:600;border-radius:999px;text-align:center;padding:2px 8px;background:color-mix(in srgb,currentColor 13%,transparent);align-self:start;justify-self:start;white-space:nowrap}
+.lvl.spam{color:var(--spam)}
+.lvl.held{color:var(--held)}
+.lvl.ok{color:var(--ok)}
+.lvl.you{color:var(--accent)}
+
+.dock{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 16px;background:var(--surface);border-top:1px solid var(--line);font-size:13px}
+.dock .lab{color:var(--muted)}
+.dock .btn{padding:4px 10px}
+.dock .last{flex:1 1 320px;min-width:0;display:flex;gap:8px;align-items:baseline;color:var(--muted)}
+
+@media (max-width:1239px){
+  .app.g{grid-template-columns:228px minmax(300px,400px) minmax(0,1fr)}
+  .guide{position:absolute;top:0;right:0;bottom:0;width:min(360px,100%);box-shadow:-12px 0 32px rgba(0,0,0,.14);z-index:5}
+}
+@media (max-width:980px){
+  html,body{height:auto}
+  .app,.app.g{display:flex;flex-direction:column}
+  .side,.list,.read,.guide{overflow:visible}
+  .side{display:contents}
+  .side>.nav{order:0;flex-direction:row;flex-wrap:wrap;padding:10px 12px}
+  .side>.nav button{width:auto}
+  .side>.nav .n{margin-left:6px}
+  .list{order:1;border-right:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .read{order:2;padding:18px 16px}
+  .side>.sect{order:3;margin:0 16px;padding:12px 0}
+  .guide{order:4;position:static;width:auto;box-shadow:none;border-left:0;border-top:1px solid var(--line)}
+  .dock{position:sticky;bottom:0}
+}
+@media (prefers-reduced-motion:reduce){.switch i,.switch i::after{transition:none}}
+</style>
+</head>
+<body>
+<header class="bar" id="bar"></header>
+<main class="app" id="app">
+  <aside class="side" id="side"></aside>
+  <section class="list" id="list" aria-label="Messages"></section>
+  <section class="read" id="read" aria-label="Selected message"></section>
+  <aside class="guide" id="guide" aria-label="Design notes" hidden></aside>
+</main>
+<footer class="dock" id="dock"></footer>
+<script>
+const KIND_LABEL={housing:'housing',jobs:'job'};
+const CONF=['Likely spam','Unsure','Likely wanted'];
+const NOTES=[
+  ['Status line','What the filter did today, visible without opening a folder.','Situation awareness'],
+  ['Review notice','Puts the audit inside the inbox, with a last call for mail about to be deleted.','Workflow'],
+  ['Confidence and reasons','How sure the filter is, in three steps, and the main factors.','Situation awareness'],
+  ['Keep or discard','Level 6. The filter states its intended action and you can veto it for 72 hours. Each sending domain is asked about once.','Workload'],
+  ['Expecting mode','For one kind of mail and a fixed period, authenticated new senders are delivered at level 7, with links off until you confirm them.','Decision making'],
+  ['New sender label','Counters the assumption that whatever passed the filter is safe.','Decision making'],
+  ['Filter report','Held, reviewed, and kept counts for calibrating trust.','Decision making'],
+  ['Heads-up','Appears when an automated receipt arrives from a new organization, because its replies are at risk of being held.','Situation awareness']
+];
+const POOL={
+  spam:[
+    ['Mega Rewards Club','winner@mega-rewards.example','You have won a gift card','Claim your reward in the next 24 hours by confirming your details.'],
+    ['Fast Loan Desk','offers@fastloandesk.example','Pre-approved for a personal loan','No credit check is needed. Reply with your account number to begin.'],
+    ['Coin Signals Daily','alerts@coinsignals.example','This coin is about to triple','Our members doubled their money last week. Join before midnight.']
+  ],
+  borderline:[
+    ['Pruitt Property Management','leasing@pruittpm.example','Application received, next steps','Thank you for applying for unit 3B. Please confirm a time to sign the lease by Friday at 5 pm.','housing'],
+    ['Tessler Labs Talent Team','talent@tesslerlabs.example','Following up on your application','We would like to schedule a 30 minute phone screen this week. Reply with two times that work.','jobs'],
+    ['Parcel Locker 14','no-reply@parcellocker.example','Your one-time pickup code','Your parcel is in locker 14. The pickup code 4471 expires in 48 hours.','other','Likely spam']
+  ],
+  receipt:[
+    ['Larkin Street Apartments','apply@larkinstreet.example','We received your rental application','Your application for unit 5C is in review. The leasing office will reply within three business days.','housing'],
+    ['Harlow Analytics Careers','careers@harlowanalytics.example','Application received for Data Analyst','Thank you for applying. A recruiter will contact you if your background fits the role.','jobs']
+  ],
+  known:[
+    ['Kelsey Braun','kbraun@seas.upenn.example','Lunch tomorrow?','Are you free at noon? I can meet at Houston Hall.'],
+    ['Prof. Hendricks','r.hendricks@seas.upenn.example','Reading for next week','Please read chapters 10 and 11 before Monday.']
+  ]
+};
+const state={
+  design:'redesign',guide:false,view:'inbox',sel:'m1',moreOpen:false,tip:{from:'Fenwick Arms Applicant Portal',kind:'housing'},senders:{},
+  expecting:{on:false,kind:'housing',days:14},
+  stats:{spam30:275,spamToday:9,heldReview30:8,reviewed:6,rescued:2},
+  seq:100,sim:{spam:0,borderline:0,known:0,receipt:0},log:[],
+  msgs:[
+    {id:'m1',folder:'inbox',from:'Prof. Hendricks',addr:'r.hendricks@seas.upenn.example',subject:'Office hours moved to Thursday',body:['Office hours this week move to Thursday from 2 to 4 pm in Towne 311.','Bring your draft outline if you want comments before the deadline.'],time:'9:12 AM',unread:true},
+    {id:'m5',folder:'inbox',from:'Account Security Team',addr:'verify@secure-login-check.example',subject:'Unusual sign-in attempt, verify now',body:['We noticed a sign-in from a new device. Confirm your password within 12 hours to keep your account open.','Verify my account'],time:'8:40 AM',unread:true,first:true},
+    {id:'m8',folder:'inbox',from:'Fenwick Arms Applicant Portal',addr:'fenwickarms@rentportal.example',subject:'We received your rental application',body:['Your application for the 1-bedroom is in review. The leasing office will contact you about a tour.'],time:'Yesterday',first:true},
+    {id:'m4',folder:'inbox',from:'City Transit Pass',addr:'receipts@citytransit.example',subject:'Your monthly pass receipt',body:['Thank you for your purchase. Your November pass is active.','Amount charged 96.00.'],time:'Yesterday',first:true},
+    {id:'m2',folder:'inbox',from:'Kelsey Braun',addr:'kbraun@seas.upenn.example',subject:'Notes from study group',body:['Here are my notes from Tuesday. The signal detection examples are at the end.'],time:'Yesterday'},
+    {id:'m3',folder:'inbox',from:'Penn Bookstore',addr:'orders@pennbookstore.example',subject:'Your order is ready for pickup',body:['Your order is ready at the front desk. Bring your PennCard.'],time:'Nov 11'},
+    {id:'m6',folder:'held',from:'Fenwick Arms Leasing Office',addr:'leasing@fenwickarms.example',subject:'Re: Tour availability for the 1-bedroom',body:['Thanks for your interest in the 1-bedroom on the third floor. We can show it Saturday at 10 am or Sunday at 1 pm.','Two other applicants are touring this weekend, so please confirm a time by Friday.','Book a tour time'],time:'7:55 AM',first:true,kind:'housing',tier:'borderline',hours:68,reasons:['First-time sender','Bulk mail format','Passed authentication'],unread:true},
+    {id:'s1',folder:'spam',from:'Prize Center',addr:'claims@prize-center.example',subject:'Final notice about your prize',body:['You are our selected winner. Send the processing fee today to release your prize.'],time:'6:30 AM',tier:'clear',days:30,reasons:['Sender is on abuse lists','Asks for a payment','Sent to many recipients']},
+    {id:'s2',folder:'spam',from:'Pharmacy Deals',addr:'deals@pharmadeals.example',subject:'80 percent off today only',body:['No prescription is required. Order in the next hour for free shipping.'],time:'5:02 AM',tier:'clear',days:30,reasons:['Failed authentication','Link text does not match its destination','Sent to many recipients']},
+    {id:'s3',folder:'spam',from:'Crypto Signals',addr:'vip@cryptosignals.example',subject:'Insider tip inside',body:['Buy before the announcement and triple your money.'],time:'3:47 AM',tier:'clear',days:30,reasons:['Sender is on abuse lists','Sent to many recipients']},
+    {id:'m7',folder:'spam',from:'Dunmore Group Recruiting',addr:'recruiting@dunmoregroup.example',subject:'Interview scheduling for the analyst role',body:['We enjoyed reviewing your application and would like to schedule an interview.','Please choose a time using the link below. Our hiring round closes at the end of the month.','Choose an interview time'],time:'Oct 17',first:true,kind:'jobs',tier:'borderline',days:3,expired:true,reasons:['First-time sender','Bulk mail format','Passed authentication']}
+  ]
+};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const el=id=>document.getElementById(id);
+const find=id=>state.msgs.find(m=>m.id===id);
+const redesign=()=>state.design==='redesign';
+const unsure=m=>m.tier==='borderline'&&!m.kept&&(m.folder==='held'||m.viaMode);
+const lastCall=m=>m.folder==='spam'&&m.tier==='borderline'&&m.expired;
+const dom=a=>{const d=(a.split('@')[1]||a).toLowerCase();return /^(gmail|outlook|yahoo|hotmail)\./.test(d)?a.toLowerCase():d};
+const modeHold=m=>m.viaMode&&!m.kept&&m.folder==='inbox';
+const eff=m=>(!redesign()&&unsure(m))?'spam':m.folder;
+const queue=()=>redesign()?state.msgs.filter(m=>m.folder==='held'||lastCall(m)):[];
+const listFor=v=>v==='held'?queue():state.msgs.filter(m=>eff(m)===v);
+const nb=n=>(state.guide&&redesign())?`<span class="nb" title="Design note ${n}" aria-label="Design note ${n}">${n}</span>`:'';
+const lv=l=>/^L\d$/.test(l)?'Level '+l[1]:l;
+const log=(l,t,x)=>{state.log.unshift({l,t,x});state.log=state.log.slice(0,6)};
+const spamCount=()=>state.stats.spam30+(redesign()?0:state.msgs.filter(m=>unsure(m)&&m.folder!=='spam').length);
+
+function renderBar(){
+  const e=state.expecting;
+  el('bar').innerHTML=`
+    <div class="brand"><h1>Mail</h1><span>Concept prototype</span></div>
+    ${redesign()&&e.on?`<span class="mode">Expecting ${KIND_LABEL[e.kind]} mail, ${e.days} days left <button class="link" data-a="exp-off">Turn off</button></span>`:''}
+    <div class="seg" role="group" aria-label="Design shown">
+      <button data-a="design" data-v="current" aria-pressed="${!redesign()}">Current design</button>
+      <button data-a="design" data-v="redesign" aria-pressed="${redesign()}">Proposed redesign</button>
+    </div>
+    <button class="ghost" data-a="guide" aria-pressed="${state.guide}">Design notes</button>`;
+}
+
+function renderSide(){
+  const e=state.expecting,unread=listFor('inbox').filter(m=>m.unread).length;
+  const navBtn=(v,label,n,cls='')=>`<button data-a="nav" data-v="${v}" class="${cls}" aria-current="${state.view===v}">${label}<span class="n">${n}</span></button>`;
+  let nav=navBtn('inbox','Inbox',unread||'');
+  if(redesign()){
+    nav+=navBtn('held','Held for review',queue().length||'')+navBtn('spam','Spam',spamCount())+navBtn('report',nb(7)+'Filter report','');
+  }else{
+    nav+=`<button data-a="more" aria-expanded="${state.moreOpen}">More<span class="n">${state.moreOpen?'Hide':'Show'}</span></button>`;
+    if(state.moreOpen)nav+=navBtn('spam','Spam',spamCount(),'sub');
+  }
+  const exp=redesign()?`
+    <div class="sect">
+      <button class="switch" data-a="exp-toggle" aria-pressed="${e.on}"><span>${nb(5)}Expecting mode</span><i></i></button>
+      ${e.on?`<div class="fields">
+        <div><label for="exp-kind">Waiting for</label>
+          <select id="exp-kind" data-c="exp-kind">
+            <option value="housing"${e.kind==='housing'?' selected':''}>Housing</option>
+            <option value="jobs"${e.kind==='jobs'?' selected':''}>Jobs</option>
+          </select></div>
+        <div><label for="exp-days">For</label>
+          <select id="exp-days" data-c="exp-days">
+            ${[7,14,30].map(d=>`<option value="${d}"${e.days===d?' selected':''}>${d} days</option>`).join('')}
+          </select></div>
+      </div>`:''}
+      <p class="small">${e.on?'Matching new senders reach the inbox with a label. The mode ends by itself.':'Lets one kind of new sender through for a set time.'}</p>
+    </div>`:'';
+  el('side').innerHTML=`<nav class="nav" aria-label="Folders">${nav}</nav>${exp}`;
+}
+
+function msgRow(m){
+  let tag='';
+  if(state.view==='held')tag=`<span class="tag held">${m.folder==='held'?`${m.hours} h left`:`Deleted in ${m.days} days`}</span>`;
+  else if(redesign()&&m.first&&eff(m)==='inbox')tag=`<span class="tag new">New sender</span>`;
+  else if(redesign()&&lastCall(m))tag=`<span class="tag held">Never reviewed</span>`;
+  return `<button class="msg${m.unread?' unread':''}" data-a="open" data-v="${m.id}" aria-current="${state.sel===m.id}">
+    <span class="top"><span class="from">${esc(m.from)}</span>${tag}<span class="time">${esc(m.time)}</span></span>
+    <span class="sub"><b>${esc(m.subject)}</b> &middot; ${esc(m.body[0])}</span></button>`;
+}
+
+function renderList(){
+  const v=state.view,s=state.stats,q=queue();let h='';
+  if(redesign())h+=`<p class="status">${nb(1)}<span class="s">Today</span><span class="s"><b>${s.spamToday}</b> moved to Spam</span><span class="s"><b>${q.length}</b> waiting for review</span></p>`;
+  if(v==='report'){
+    h+=`<div class="report"><h2>Last 30 days</h2>
+      <dl class="stats">
+        <dt>Moved to Spam at high confidence</dt><dd>${s.spam30}</dd>
+        <dt>Held for your review</dt><dd>${s.heldReview30}</dd>
+        <dt>Reviewed by you</dt><dd>${s.reviewed}</dd>
+        <dt>Kept after review</dt><dd>${s.rescued}</dd>
+      </dl><p class="small">Sample data. The counts update as you keep or discard messages here.</p></div>`;
+    el('list').innerHTML=h;return;
+  }
+  if(redesign()&&v==='inbox'){
+    const lc=q.filter(lastCall);
+    if(q.length)h+=`<div class="notice"><i class="dot held"></i><div class="grow"><p>${nb(2)}<b>${q.length} waiting for review.</b> ${q.map(m=>esc(m.from)).join(', ')}.${lc.length?` Last call for ${lc.length}, deleted in ${lc[0].days} days.`:''}</p></div><div class="acts"><button class="link" data-a="nav" data-v="held">Review</button></div></div>`;
+    if(state.tip&&!state.expecting.on)h+=`<div class="notice"><i class="dot tip"></i><div class="grow"><p>${nb(8)}${esc(state.tip.from)} sent you an application receipt. Replies from new senders like this are sometimes held.</p>
+      <p class="acts"><button class="link" data-a="tip-yes">Expect ${KIND_LABEL[state.tip.kind]} mail for 14 days</button><button class="link quiet" data-a="tip-no">Dismiss</button></p></div></div>`;
+  }
+  const rows=listFor(v);
+  h+=rows.length?rows.map(msgRow).join(''):`<p class="empty">${v==='held'?'Nothing is waiting for review.':'No messages here.'}</p>`;
+  if(v==='spam')h+=`<p class="empty">271 older messages are not shown. Spam is deleted 30 days after it arrives.</p>`;
+  el('list').innerHTML=h;
+}
+
+function facts(conf,reasons,n){
+  const i=CONF.indexOf(conf);
+  return `<dl class="facts"><dt>${n?nb(3):''}Confidence</dt><dd><span class="steps" aria-hidden="true">${CONF.map((c,k)=>`<i class="${k===i?'on':''}"></i>`).join('')}</span>${conf}</dd>
+    <dt>Why</dt><dd>${reasons.map(esc).join(' &middot; ')}</dd></dl>`;
+}
+function bodyHtml(m,dead){
+  return m.body.map((p,i)=>{
+    const link=i===m.body.length-1&&m.body.length>1&&/^(Book|Choose|Verify)/.test(p);
+    return link?`<p><span class="deadlink">${esc(p)}</span>${dead?' <span class="small">(link disabled)</span>':''}</p>`:`<p>${esc(p)}</p>`;
+  }).join('');
+}
+
+function renderReader(){
+  const m=find(state.sel);
+  if(state.view==='report'){
+    el('read').innerHTML=`<h2>Filter report</h2><div class="body"><p>Trust in a filter tends to follow the last error you remember. This report gives you a record to judge it by, so that you can see how often held mail turned out to be wanted.</p></div>`;return;
+  }
+  if(!m||!listFor(state.view).includes(m)){el('read').innerHTML=`<p class="small">Select a message to read it.</p>`;return}
+  const f=eff(m);let v='';
+  if(redesign()&&m.folder==='held'){
+    v=`<div class="strip held"><h3>${nb(4)}Held for review. Moves to Spam in ${m.hours} hours unless you keep it.</h3>${facts(m.conf||'Unsure',m.reasons,true)}
+      <div class="row"><button class="btn primary" data-a="keep" data-v="${m.id}">Keep</button><button class="btn" data-a="discard" data-v="${m.id}">Discard</button><span class="small">Links stay disabled until you keep it.</span></div></div>`;
+  }else if(redesign()&&lastCall(m)){
+    v=`<div class="strip held"><h3>Never reviewed. Deleted from Spam in ${m.days} days.</h3>${facts('Unsure',m.reasons)}
+      <div class="row"><button class="btn primary" data-a="rescue" data-v="${m.id}">Keep</button><button class="btn" data-a="dismiss" data-v="${m.id}">Leave in Spam</button></div></div>`;
+  }else if(redesign()&&f==='spam'){
+    v=`<div class="strip spam"><h3>In Spam. Deleted in ${m.days} days.</h3>${facts('Likely spam',m.reasons)}
+      <div class="row"><button class="btn" data-a="rescue" data-v="${m.id}">Not spam</button></div></div>`;
+  }else if(f==='spam'){
+    v=`<div class="strip spam"><h3>Why is this in Spam?</h3><p>It resembles messages that were identified as spam before.</p>
+      <div class="row"><button class="btn" data-a="rescue" data-v="${m.id}">Not spam</button></div></div>`;
+  }else if(redesign()&&modeHold(m)){
+    v=`<p class="inline"><i class="dot tip"></i><span>${nb(5)}Delivered by Expecting mode. Links and attachments stay off until you confirm the sender.</span><button class="link" data-a="trust" data-v="${m.id}">I know this sender</button><button class="link" data-a="report" data-v="${m.id}">Report spam</button></p>`;
+  }else if(redesign()&&m.first){
+    v=`<p class="inline"><i class="dot tip"></i><span>${nb(6)}New sender. Passing the filter is not proof that a message is safe.</span><button class="link" data-a="trust" data-v="${m.id}">I know this sender</button><button class="link" data-a="report" data-v="${m.id}">Report spam</button></p>`;
+  }
+  el('read').innerHTML=`<h2>${esc(m.subject)}</h2>
+    <p class="meta"><b>${esc(m.from)}</b><span>${esc(m.addr)}</span><span>${esc(m.time)}</span></p>
+    ${v}<div class="body">${bodyHtml(m,f!=='inbox'||(redesign()&&modeHold(m)))}</div>`;
+}
+
+function renderGuide(){
+  el('app').classList.toggle('g',state.guide);el('guide').hidden=!state.guide;
+  if(!state.guide)return;
+  el('guide').innerHTML=`<h2>Design notes <button class="link" data-a="guide">Close</button></h2>
+    <p class="small">Switch designs at the top to compare them on the same mail. The Try it buttons below send a test message through the filter.</p>
+    ${redesign()?`<ul class="notes">${NOTES.map((n,i)=>`<li><span class="nb">${i+1}</span><span><b>${n[0]}.</b> ${n[1]} <em>${n[2]} improvement</em></span></li>`).join('')}</ul>`
+      :`<p>This is the baseline. Spam sits under More, held mail leaves no trace in the inbox, and every flagged message gets the same generic reason.</p>`}
+    <h3>Recent filter activity</h3>
+    <ul class="log">${state.log.map(e=>`<li><span class="lvl ${e.t}">${lv(e.l)}</span><span>${esc(e.x)}</span></li>`).join('')}</ul>
+    <p class="small">Levels follow the Sheridan scale. At level 8 the filter acts and tells you only if asked. At level 6 you have time to veto. At level 7 it acts and always tells you.</p>`;
+}
+function renderDock(){
+  const e=state.log[0];
+  el('dock').innerHTML=`<span class="lab">Try it</span>
+    <button class="btn" data-a="sim" data-v="spam">Obvious spam</button>
+    <button class="btn" data-a="sim" data-v="borderline">Uncertain new sender</button>
+    <button class="btn" data-a="sim" data-v="receipt">Application receipt</button>
+    <button class="btn" data-a="sim" data-v="known">Known contact</button>
+    <p class="last" aria-live="polite">${e?`<span class="lvl ${e.t}">${lv(e.l)}</span><span>${esc(e.x)}</span>`:''}</p>`;
+}
+
+function baseline(){
+  const s={l:'L8',t:'spam',x:`Moved ${state.stats.spamToday} messages to Spam today without notice. Confidence was high for each.`};
+  const rows=redesign()
+    ?state.msgs.filter(m=>m.folder==='held').map(m=>({l:'L6',t:'held',x:`Held "${m.subject}" for review instead of sending it to Spam.`}))
+    :state.msgs.filter(m=>unsure(m)&&m.folder!=='spam').map(m=>({l:'L8',t:'spam',x:`Moved "${m.subject}" to Spam without notice, the same as obvious spam.`}));
+  state.log=[...rows,s].slice(0,6);
+}
+function render(focusKey){
+  renderBar();renderSide();renderList();renderReader();renderGuide();renderDock();
+  if(focusKey){const t=document.querySelector(focusKey);if(t)t.focus({preventScroll:true})}
+}
+function deliverMatching(){
+  const e=state.expecting;let n=0;
+  const hit=state.msgs.filter(m=>m.folder==='held'&&m.kind===e.kind);
+  hit.forEach(m=>{m.folder='inbox';m.viaMode=true;m.first=true;m.unread=true;n++});
+  state.msgs=[...hit,...state.msgs.filter(m=>!hit.includes(m))];
+  return n;
+}
+function expectingOn(){
+  const e=state.expecting;e.on=true;const n=deliverMatching();
+  log('L7','ok',`Expecting mode on for ${KIND_LABEL[e.kind]} mail, ${e.days} days.${n?` ${n} held message${n>1?'s':''} delivered with a New sender label and links off.`:''}`);
+}
+function simulate(type){
+  const pool=POOL[type],p=pool[state.sim[type]++%pool.length],id='x'+(state.seq++);
+  const m={id,from:p[0],addr:p[1],subject:p[2],body:[p[3]],time:'Just now',unread:true};
+  if(type==='spam'){
+    Object.assign(m,{folder:'spam',tier:'clear',days:30,reasons:['Sender is on abuse lists','Sent to many recipients']});
+    state.stats.spam30++;state.stats.spamToday++;
+    log('L8','spam',`"${p[2]}" moved to Spam without notice. Confidence was high.`);
+  }else if(type==='known'){
+    m.folder='inbox';log('Inbox','ok',`"${p[2]}" delivered to the inbox. The sender is a known contact.`);
+  }else if(type==='receipt'){
+    Object.assign(m,{folder:'inbox',first:true});
+    if(redesign()&&!state.expecting.on){state.tip={from:p[0],kind:p[4]};log('Inbox','ok',`"${p[2]}" delivered. It is an automated receipt from a new organization, so a heads-up is shown.`)}
+    else log('Inbox','ok',`"${p[2]}" delivered to the inbox.`);
+  }else if(redesign()&&state.senders[dom(p[1])]==='kept'){
+    m.folder='inbox';log('Inbox','ok',`"${p[2]}" delivered. You kept this sender before, so it is not held again.`);
+  }else if(redesign()&&state.senders[dom(p[1])]==='discarded'){
+    Object.assign(m,{folder:'spam',tier:'clear',days:30,reasons:['Sender discarded by you']});state.stats.spam30++;
+    log('L8','spam',`"${p[2]}" moved to Spam. You discarded this sender before, so you are not asked again.`);
+  }else{
+    Object.assign(m,{first:true,kind:p[4],tier:'borderline',hours:72,conf:p[5]||'Unsure',reasons:p[5]?['Passed authentication','Labeled as an update','Domain not yet judged']:['First-time sender','Bulk mail format','Passed authentication']});
+    const e=state.expecting;if(redesign())state.stats.heldReview30++;
+    if(!redesign()){
+      m.folder='held';log('L8','spam',`"${p[2]}" moved to Spam without notice, the same as obvious spam. The filter was unsure.`);
+    }else if(e.on&&e.kind===m.kind){
+      m.folder='inbox';m.viaMode=true;log('L7','ok',`"${p[2]}" passed authentication, matched Expecting mode, and was delivered with links off until you confirm the sender.`);
+    }else{
+      m.folder='held';log('L6','held',p[5]?`"${p[2]}" held for review although the filter rated it likely spam, because it is an authenticated update from a domain you have not judged.`:`"${p[2]}" held for review for 72 hours. It moves to Spam unless you keep it.`);
+    }
+  }
+  state.msgs.unshift(m);
+}
+function nextInView(){const n=listFor(state.view)[0];state.sel=n?n.id:null}
+const ACT={
+  design(v){if(state.design===v)return;state.design=v;if(!redesign()&&(state.view==='held'||state.view==='report'))state.view='inbox';if(!redesign()&&state.view==='spam')state.moreOpen=true;baseline()},
+  guide(){state.guide=!state.guide},
+  more(){state.moreOpen=!state.moreOpen;if(!state.moreOpen&&state.view==='spam')state.view='inbox'},
+  nav(v){state.view=v;const first=listFor(v)[0];if(first){state.sel=first.id;first.unread=false}},
+  open(v){state.sel=v;const m=find(v);if(m)m.unread=false},
+  keep(v){const m=find(v);state.senders[dom(m.addr)]='kept';m.folder='inbox';m.kept=true;m.first=true;state.stats.reviewed++;state.stats.rescued++;state.view='inbox';log('You','you',`You kept "${m.subject}". It is in the inbox, and later mail from this domain will be delivered.`)},
+  discard(v){const m=find(v);state.senders[dom(m.addr)]='discarded';m.folder='spam';m.tier='clear';m.days=30;m.reasons=['Discarded by you'];state.stats.reviewed++;state.stats.spam30++;nextInView();log('You','you',`You discarded "${m.subject}". It moved to Spam, and this sender will not be held for review again.`)},
+  rescue(v){const m=find(v);state.senders[dom(m.addr)]='kept';const border=m.tier==='borderline';m.folder='inbox';m.kept=true;m.first=true;m.expired=false;if(border){state.stats.reviewed++;state.stats.rescued++}state.view='inbox';log('You','you',`You kept "${m.subject}". It is in the inbox.`)},
+  dismiss(v){const m=find(v);state.senders[dom(m.addr)]='discarded';m.expired=false;m.tier='clear';m.reasons=['Left in Spam by you'];state.stats.reviewed++;nextInView();log('You','you',`You left "${m.subject}" in Spam. It will be deleted on schedule.`)},
+  trust(v){const m=find(v);state.senders[dom(m.addr)]='kept';m.first=false;m.kept=true;log('You','you',`You confirmed ${m.from} as a known sender. The label is removed.`)},
+  report(v){const m=find(v);state.senders[dom(m.addr)]='discarded';m.folder='spam';m.tier='clear';m.days=30;m.reasons=['Reported by you'];state.stats.spam30++;nextInView();log('You','you',`You reported "${m.subject}" as spam. Similar mail will be flagged.`)},
+  'exp-toggle'(){if(state.expecting.on)ACT['exp-off']();else expectingOn()},
+  'exp-off'(){state.expecting.on=false;log('L6','held','Expecting mode off. Uncertain new senders are held for review again.')},
+  'tip-yes'(){state.expecting.kind=state.tip.kind;state.expecting.days=14;state.tip=null;expectingOn()},
+  'tip-no'(){state.tip=null},
+  sim(v){simulate(v)}
+};
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-a]');if(!b)return;
+  const a=b.dataset.a,v=b.dataset.v;if(!ACT[a])return;
+  ACT[a](v);
+  render(`[data-a="${a}"]${v?`[data-v="${v}"]`:''}`);
+});
+document.addEventListener('change',ev=>{
+  const c=ev.target.dataset.c;if(!c)return;
+  if(c==='exp-kind'){state.expecting.kind=ev.target.value;if(state.expecting.on){const n=deliverMatching();log('L7','ok',`Expecting mode now covers ${KIND_LABEL[state.expecting.kind]} mail.${n?` ${n} held message${n>1?'s':''} delivered.`:''}`)}}
+  if(c==='exp-days')state.expecting.days=Number(ev.target.value);
+  render('#'+ev.target.id);
+});
+baseline();
+render();
+</script>
+</body>
+</html>
