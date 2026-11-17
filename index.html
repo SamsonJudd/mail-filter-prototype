@@ -126,6 +126,11 @@ select{width:100%;background:var(--surface);border:1px solid var(--line);border-
 .inline>span{flex:1 1 240px;min-width:0}
 .body{display:flex;flex-direction:column;gap:10px;max-width:65ch;font-size:15px;line-height:1.55}
 .deadlink{text-decoration:underline dotted;color:var(--muted)}
+.msglink{border:0;background:none;padding:1px 3px;margin:0 -3px;border-radius:4px;font:inherit;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.msglink:hover{text-decoration-thickness:2px}
+.unlocked{color:var(--ok);font-size:12.5px;margin-left:10px}
+@media (prefers-reduced-motion:no-preference){.msglink.flash{animation:unlock 2s ease-out 1}}
+@keyframes unlock{0%,30%{background:color-mix(in srgb,var(--ok) 28%,transparent)}100%{background:transparent}}
 
 .guide{border-left:1px solid var(--line);background:var(--bg);padding:16px;display:flex;flex-direction:column;gap:14px}
 .guide[hidden]{display:none}
@@ -220,7 +225,7 @@ const state={
   seq:100,sim:{spam:0,borderline:0,known:0,receipt:0},log:[],
   msgs:[
     {id:'m1',folder:'inbox',from:'Prof. Hendricks',addr:'r.hendricks@seas.upenn.example',subject:'Office hours moved to Thursday',body:['Office hours this week move to Thursday from 2 to 4 pm in Towne 311.','Bring your draft outline if you want comments before the deadline.'],time:'9:12 AM',unread:true},
-    {id:'m5',folder:'inbox',from:'Account Security Team',addr:'verify@secure-login-check.example',subject:'Unusual sign-in attempt, verify now',body:['We noticed a sign-in from a new device. Confirm your password within 12 hours to keep your account open.','Verify my account'],time:'8:40 AM',unread:true,first:true},
+    {id:'m5',folder:'inbox',from:'Account Security Team',addr:'verify@secure-login-check.example',subject:'Unusual sign-in attempt, verify now',body:['We noticed a sign-in from a new device. Confirm your password within 12 hours to keep your account open.','Verify my account'],time:'8:40 AM',unread:true,first:true,phish:true},
     {id:'m8',folder:'inbox',from:'Fenwick Arms Applicant Portal',addr:'fenwickarms@rentportal.example',subject:'We received your rental application',body:['Your application for the 1-bedroom is in review. The leasing office will contact you about a tour.'],time:'Yesterday',first:true},
     {id:'m4',folder:'inbox',from:'City Transit Pass',addr:'receipts@citytransit.example',subject:'Your monthly pass receipt',body:['Thank you for your purchase. Your November pass is active.','Amount charged 96.00.'],time:'Yesterday',first:true},
     {id:'m2',folder:'inbox',from:'Kelsey Braun',addr:'kbraun@seas.upenn.example',subject:'Notes from study group',body:['Here are my notes from Tuesday. The signal detection examples are at the end.'],time:'Yesterday'},
@@ -232,6 +237,7 @@ const state={
     {id:'m7',folder:'spam',from:'Dunmore Group Recruiting',addr:'recruiting@dunmoregroup.example',subject:'Interview scheduling for the analyst role',body:['We enjoyed reviewing your application and would like to schedule an interview.','Please choose a time using the link below. Our hiring round closes at the end of the month.','Choose an interview time'],time:'Oct 17',first:true,kind:'jobs',tier:'borderline',days:3,expired:true,reasons:['First-time sender','Bulk mail format','Passed authentication']}
   ]
 };
+const INITIAL=JSON.parse(JSON.stringify(state));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const el=id=>document.getElementById(id);
 const find=id=>state.msgs.find(m=>m.id===id);
@@ -332,7 +338,9 @@ function facts(conf,reasons,n){
 function bodyHtml(m,dead){
   return m.body.map((p,i)=>{
     const link=i===m.body.length-1&&m.body.length>1&&/^(Book|Choose|Verify)/.test(p);
-    return link?`<p><span class="deadlink">${esc(p)}</span>${dead?' <span class="small">(link disabled)</span>':''}</p>`:`<p>${esc(p)}</p>`;
+    if(!link)return `<p>${esc(p)}</p>`;
+    if(dead)return `<p><span class="deadlink">${esc(p)}</span> <span class="small">(link disabled)</span></p>`;
+    return `<p><button class="msglink${m.flash?' flash':''}" data-a="follow" data-v="${m.id}">${esc(p)}</button>${m.unlock?`<span class="unlocked">Link turned on when you ${esc(m.unlock)}.</span>`:''}</p>`;
   }).join('');
 }
 
@@ -369,7 +377,7 @@ function renderGuide(){
   el('app').classList.toggle('g',state.guide);el('guide').hidden=!state.guide;
   if(!state.guide)return;
   el('guide').innerHTML=`<h2>Design notes <button class="link" data-a="guide">Close</button></h2>
-    <p class="small">Switch designs at the top to compare them on the same mail. The Try it buttons below send a test message through the filter.</p>
+    <p class="small">Switch designs at the top to compare them on the same mail. The Try it buttons below send a test message through the filter, and Reset demo returns everything to the start.</p>
     ${redesign()?`<ul class="notes">${NOTES.map((n,i)=>`<li><span class="nb">${i+1}</span><span><b>${n[0]}.</b> ${n[1]} <em>${n[2]} improvement</em></span></li>`).join('')}</ul>`
       :`<p>This is the baseline. Spam sits under More, held mail leaves no trace in the inbox, and every flagged message gets the same generic reason.</p>`}
     <h3>Recent filter activity</h3>
@@ -383,7 +391,8 @@ function renderDock(){
     <button class="btn" data-a="sim" data-v="borderline">Uncertain new sender</button>
     <button class="btn" data-a="sim" data-v="receipt">Application receipt</button>
     <button class="btn" data-a="sim" data-v="known">Known contact</button>
-    <p class="last" aria-live="polite">${e?`<span class="lvl ${e.t}">${lv(e.l)}</span><span>${esc(e.x)}</span>`:''}</p>`;
+    <p class="last" aria-live="polite">${e?`<span class="lvl ${e.t}">${lv(e.l)}</span><span>${esc(e.x)}</span>`:''}</p>
+    <button class="btn" data-a="reset" title="Return to the starting messages and forget your choices">Reset demo</button>`;
 }
 
 function baseline(){
@@ -395,6 +404,7 @@ function baseline(){
 }
 function render(focusKey){
   renderBar();renderSide();renderList();renderReader();renderGuide();renderDock();
+  state.msgs.forEach(x=>{x.flash=false});
   if(focusKey){const t=document.querySelector(focusKey);if(t)t.focus({preventScroll:true})}
 }
 function deliverMatching(){
@@ -446,17 +456,21 @@ const ACT={
   more(){state.moreOpen=!state.moreOpen;if(!state.moreOpen&&state.view==='spam')state.view='inbox'},
   nav(v){state.view=v;const first=listFor(v)[0];if(first){state.sel=first.id;first.unread=false}},
   open(v){state.sel=v;const m=find(v);if(m)m.unread=false},
-  keep(v){const m=find(v);state.senders[dom(m.addr)]='kept';m.folder='inbox';m.kept=true;m.first=true;state.stats.reviewed++;state.stats.rescued++;state.view='inbox';log('You','you',`You kept "${m.subject}". It is in the inbox, and later mail from this domain will be delivered.`)},
+  keep(v){const m=find(v);state.senders[dom(m.addr)]='kept';m.folder='inbox';m.kept=true;m.unlock='kept it';m.flash=true;m.first=true;state.stats.reviewed++;state.stats.rescued++;state.view='inbox';log('You','you',`You kept "${m.subject}". It is in the inbox, and later mail from this domain will be delivered.`)},
   discard(v){const m=find(v);state.senders[dom(m.addr)]='discarded';m.folder='spam';m.tier='clear';m.days=30;m.reasons=['Discarded by you'];state.stats.reviewed++;state.stats.spam30++;nextInView();log('You','you',`You discarded "${m.subject}". It moved to Spam, and this sender will not be held for review again.`)},
-  rescue(v){const m=find(v);state.senders[dom(m.addr)]='kept';const border=m.tier==='borderline';m.folder='inbox';m.kept=true;m.first=true;m.expired=false;if(border){state.stats.reviewed++;state.stats.rescued++}state.view='inbox';log('You','you',`You kept "${m.subject}". It is in the inbox.`)},
+  rescue(v){const m=find(v);state.senders[dom(m.addr)]='kept';m.unlock='took it out of Spam';m.flash=true;const border=m.tier==='borderline';m.folder='inbox';m.kept=true;m.first=true;m.expired=false;if(border){state.stats.reviewed++;state.stats.rescued++}state.view='inbox';log('You','you',`You kept "${m.subject}". It is in the inbox.`)},
   dismiss(v){const m=find(v);state.senders[dom(m.addr)]='discarded';m.expired=false;m.tier='clear';m.reasons=['Left in Spam by you'];state.stats.reviewed++;nextInView();log('You','you',`You left "${m.subject}" in Spam. It will be deleted on schedule.`)},
-  trust(v){const m=find(v);state.senders[dom(m.addr)]='kept';m.first=false;m.kept=true;log('You','you',`You confirmed ${m.from} as a known sender. The label is removed.`)},
+  trust(v){const m=find(v);if(modeHold(m)){m.unlock='confirmed the sender';m.flash=true}state.senders[dom(m.addr)]='kept';m.first=false;m.kept=true;log('You','you',`You confirmed ${m.from} as a known sender. The label is removed.`)},
   report(v){const m=find(v);state.senders[dom(m.addr)]='discarded';m.folder='spam';m.tier='clear';m.days=30;m.reasons=['Reported by you'];state.stats.spam30++;nextInView();log('You','you',`You reported "${m.subject}" as spam. Similar mail will be flagged.`)},
   'exp-toggle'(){if(state.expecting.on)ACT['exp-off']();else expectingOn()},
   'exp-off'(){state.expecting.on=false;log('L6','held','Expecting mode off. Uncertain new senders are held for review again.')},
   'tip-yes'(){state.expecting.kind=state.tip.kind;state.expecting.days=14;state.tip=null;expectingOn()},
   'tip-no'(){state.tip=null},
-  sim(v){simulate(v)}
+  sim(v){simulate(v)},
+  follow(v){const m=find(v);const t=m.body[m.body.length-1];
+    if(m.phish)log('You','spam',`You opened "${t}" in a phishing message (simulated). ${redesign()?'Its New sender label was the cue to check the sender first.':'Nothing in the current design flagged it.'}`);
+    else log('You','you',`Opened "${t}" (simulated). ${m.unlock?`The link works because you ${m.unlock}.`:'The message reached your inbox, so its link works.'}`)},
+  reset(){const ui={design:state.design,guide:state.guide};Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,JSON.parse(JSON.stringify(INITIAL)),ui);baseline();log('Demo','you','Back to the starting messages. Kept, discarded, and confirmed senders are forgotten.')}
 };
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-a]');if(!b)return;
